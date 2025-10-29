@@ -26,7 +26,6 @@ export async function readRows(): Promise<QuarterRow[]> {
 export async function writeRows(rows: QuarterRow[]) {
   const client = supa();
   if (client) {
-    // Upsert into Supabase
     const { error } = await client.from('snapshots').upsert(rows, { onConflict: 'period,region' });
     if (error) throw error;
     return;

@@ -1,4 +1,3 @@
--- Create table for snapshots
 create table if not exists public.snapshots (
   period text not null,
   region text not null,

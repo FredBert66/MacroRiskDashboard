@@ -3,7 +3,7 @@ import type { NextRequest } from 'next/server';
 
 export function middleware(req: NextRequest) {
   const url = req.nextUrl;
-  // Public endpoints (allow cron and health)
+  // Allow cron & health unauthenticated
   if (url.pathname.startsWith('/api/refresh')) return NextResponse.next();
   if (url.pathname.startsWith('/api/health')) return NextResponse.next();
 
@@ -17,7 +17,7 @@ export function middleware(req: NextRequest) {
       headers: { 'WWW-Authenticate': 'Basic realm="Dashboard"' },
     });
   }
-  const decoded = Buffer.from(auth.split(' ')[1], 'base64').toString();
+  const decoded = atob(auth.split(' ')[1]);
   const [u, p] = decoded.split(':');
   if (u !== user || p !== pass) {
     return new NextResponse('Unauthorized', { status: 401 });
