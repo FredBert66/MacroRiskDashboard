@@ -70,10 +70,37 @@ export default function Page() {
       <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 12 }}>Global & Regional Macro-Risk Dashboard</h1>
       <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:12 }}>
         <label style={{ fontSize: 14 }}>Region</label>
-        <select value={region} onChange={(e)=>setRegion(e.target.value as Region)} style={{ padding:'6px 8px' }}>
-          {REGIONS.map(r => <option key={r} value={r}>{r}</option>)}
+        <select 
+          value={region} 
+          onChange={(e)=>setRegion(e.target.value as Region)} 
+          style={{ padding:'6px 8px' }}
+        >
+          {REGIONS.map((r) =>( 
+            <option key={r} value={r}>
+              {r}
+            </option>
+          ))}
         </select>
-        <button onClick={exportCSV} style={{ marginLeft:'auto', padding:'6px 10px', border:'1px solid #ccc', borderRadius:8, fontSize: 12 }}>Export CSV</button>
+        
+        <button 
+          onClick={exportCSV} 
+          style={{ 
+            marginLeft:'auto', 
+            padding:'6px 10px', 
+            border:'1px solid #ccc', 
+            borderRadius: 8, 
+            fontSize: 12,
+            background: '#f6f6f6',
+          }}
+        >
+          Export CSV
+        </button>
+        <button 
+          onClick={refreshNow} 
+          className="border rounded px-3 py-1 text-sm"
+        >
+          Refresh now
+        </button>
       </div>
 
       <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
