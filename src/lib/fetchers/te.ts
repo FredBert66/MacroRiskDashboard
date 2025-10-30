@@ -2,29 +2,28 @@
 
 const TE_ORIGIN = 'https://api.tradingeconomics.com';
 
-function buildUrl(segments: string[], qs: Record<string, string> = {}) {
-  const url = new URL(TE_ORIGIN);
-  // join and encode each path segment
-  const base = url.pathname.endsWith('/') ? url.pathname.slice(0, -1) : url.pathname;
-  url.pathname = [base, ...segments.map(s => encodeURIComponent(s))].join('/');
+function buildUrl(path: string, qs: Record<string, string>) {
+  const url = new URL(path, TE_ORIGIN);
   Object.entries(qs).forEach(([k, v]) => url.searchParams.set(k, v));
   return url;
 }
 
-async function te(segments: string[], qs: Record<string, string> = {}) {
+async function te(path: string, qs: Record<string, string>) {
   const user = process.env.TE_USER;
-  const key = process.env.TE_KEY;
+  const key  = process.env.TE_KEY;
   if (!user || !key) throw new Error('TE_USER/TE_KEY env vars missing');
 
-  const url = buildUrl(segments, { c: `${user}:${key}`, ...qs });
-
+  const url = buildUrl(path, { c: `${user}:${key}`, ...qs });
   const r = await fetch(url, { next: { revalidate: 3600 } });
-  if (!r.ok) throw new Error(`TE ${url.pathname} ${r.status}`);
+  if (!r.ok) throw new Error(`TE ${url.pathname}${url.search} ${r.status}`);
   return r.json();
 }
 
-// Convenience wrappers
-export const tePMI = (country: string) => te(['pmi', country]);
-export const teUR  = (country: string) => te(['unemployment rate', country]);
+/** Use Indicators endpoint for both PMI and Unemployment Rate */
+export const tePMI = (country: string) =>
+  te('/indicators', { country, indicator: 'PMI' });
+
+export const teUR = (country: string) =>
+  te('/indicators', { country, indicator: 'Unemployment Rate' });
 
 export { te };
