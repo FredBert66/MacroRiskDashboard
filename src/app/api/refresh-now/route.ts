@@ -1,18 +1,16 @@
 import { NextResponse } from 'next/server';
 import { headers } from 'next/headers';
 
-// import your existing POST handler (we’ll reuse it)
-import { POST as refreshPOST } from '../../../refresh/route';
-
-// Proxy call so the token never leaves the server
 export async function POST() {
-  // Inject the token into the header context by temporarily relaxing /api/refresh check:
-  // Update /api/refresh to accept either the header OR a query param (?token=...)
+  // Build absolute URL to your own /api/refresh endpoint
+  const h = headers();
+  const proto = h.get('x-forwarded-proto') ?? 'https';
+  const host = h.get('host') ?? '';
   const token = process.env.REFRESH_TOKEN ?? '';
-  const res = await fetch(new URL('/api/refresh?token=' + encodeURIComponent(token), 'http://localhost').toString(), {
-    method: 'POST',
-    // Headers won't matter when we pass token via query param
-  });
-  const data = await res.json();
+
+  const url = `${proto}://${host}/api/refresh?token=${encodeURIComponent(token)}`;
+
+  const res = await fetch(url, { method: 'POST' });
+  const data = await res.json().catch(() => ({}));
   return NextResponse.json(data, { status: res.status });
 }
