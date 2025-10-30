@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
 import { headers } from 'next/headers';
-import { getUsHyOAS, getEuHyOAS, getNFCI, getUSD } from '../../lib/fetchers/fred';
-import { bls } from '../../lib/fetchers/bls';
-import { tePMI, teUR } from '../../lib/fetchers/te';
-import { computeScore, toSignal, quarter } from '../../lib/normalize';
-import { readRows, writeRows } from '../../lib/store';
-import weights from '../../lib/weights.json';
+import { getUsHyOAS, getEuHyOAS, getNFCI, getUSD } from '../../../lib/fetchers/fred';
+import { bls } from '../../../lib/fetchers/bls';
+import { tePMI, teUR } from '../../../lib/fetchers/te';
+import { computeScore, toSignal, quarter } from '../../../lib/normalize';
+import { readRows, writeRows } from '../../../lib/store';
+import weights from '../../../lib/weights.json';
 
 export async function POST() {
   try {
