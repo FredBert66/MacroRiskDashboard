@@ -8,33 +8,13 @@ import { computeScore, toSignal, quarter } from '../../../lib/normalize';
 import { readRows, writeRows } from '../../../lib/store';
 import weights from '../../../lib/weights.json';
 
-export async function GET(req: Request) {  // allow GET as well as POST
-  return handle(req);
-}
 export async function POST(req: Request) {
-  return handle(req);
-
-async function handle(req: Request) {
-  const required = process.env.REFRESH_TOKEN;
-  const hdr = headers().get('x-refresh-token');
-  const qsToken = new URL(req.url).searchParams.get('token');
-  if (required && hdr !== required && qsToken !== required) {
-    return NextResponse.json({ ok:false, error:'unauthorized' }, { status: 401 });
-  }
-async function refreshNow() {
-  const r = await fetch('/api/refresh-now', { method: 'POST' });
-  const j = await r.json();
-  alert(j.ok ? 'Refreshed!' : `Failed: ${j.error ?? r.status}`);
-}
-  // ... keep the rest of your refresh logic exactly as is ...
-}
-export async function POST() {
   try {
-    // Auth check
+    // --- Auth: allow x-refresh-token header OR ?token=... query param (handy for manual triggers/cron) ---
     const required = process.env.REFRESH_TOKEN;
-    const hdrs = headers();
-    const hdr = hdrs.get('x-refresh-token');
-    if (required && hdr !== required) {
+    const hdr = headers().get('x-refresh-token');
+    const qsToken = new URL(req.url).searchParams.get('token');
+    if (required && hdr !== required && qsToken !== required) {
       return NextResponse.json({ ok: false, error: 'unauthorized' }, { status: 401 });
     }
 
@@ -88,50 +68,18 @@ export async function POST() {
     const period = quarter(new Date().toISOString());
     const rows = await readRows();
 
-    // --- Build per-region entries ---
+    // --- Build per-region rows ---
     const regions: Record<
       string,
       { hy: number; fci: number; pmi: number; dxy: number; ur: number; bb: number; def: number }
     > = {
-      USA: {
-        hy: latest.usHy,
-        fci: latest.nfci,
-        pmi: latest.pmiUS,
-        dxy: latest.usd,
-        ur: latest.urUS,
-        bb: 1.06,
-        def: 2.0,
-      },
-      Europe: {
-        hy: latest.euHy,
-        fci: latest.nfci,
-        pmi: latest.pmiEA,
-        dxy: latest.usd,
-        ur: latest.urEA,
-        bb: 1.04,
-        def: 2.0,
-      },
-      China: {
-        hy: 380,
-        fci: 0.05,
-        pmi: latest.pmiCN,
-        dxy: latest.usd,
-        ur: latest.urCN,
-        bb: 1.02,
-        def: 3.0,
-      },
-      India: {
-        hy: 360,
-        fci: -0.25,
-        pmi: latest.pmiIN,
-        dxy: latest.usd,
-        ur: latest.urIN,
-        bb: 1.08,
-        def: 1.2,
-      },
+      USA:    { hy: latest.usHy, fci: latest.nfci, pmi: latest.pmiUS, dxy: latest.usd, ur: latest.urUS, bb: 1.06, def: 2.0 },
+      Europe: { hy: latest.euHy, fci: latest.nfci, pmi: latest.pmiEA, dxy: latest.usd, ur: latest.urEA, bb: 1.04, def: 2.0 },
+      China:  { hy: 380,        fci: 0.05,         pmi: latest.pmiCN, dxy: latest.usd, ur: latest.urCN, bb: 1.02, def: 3.0 },
+      India:  { hy: 360,        fci: -0.25,        pmi: latest.pmiIN, dxy: latest.usd, ur: latest.urIN, bb: 1.08, def: 1.2 },
       'Latin America': {
         hy: 450,
-        fci: -0.1,
+        fci: -0.10,
         pmi: (latest.pmiBR + latest.pmiMX) / 2,
         dxy: latest.usd,
         ur: (latest.urBR + latest.urMX) / 2,
@@ -141,43 +89,18 @@ export async function POST() {
     };
 
     for (const [region, x] of Object.entries(regions)) {
-      const riskScore = computeScore({
-        hyOAS: x.hy,
-        fci: x.fci,
-        pmi: x.pmi,
-        dxy: x.dxy,
-        bookBill: x.bb,
-        ur: x.ur,
-      });
+      const riskScore = computeScore({ hyOAS: x.hy, fci: x.fci, pmi: x.pmi, dxy: x.dxy, bookBill: x.bb, ur: x.ur });
       const signal = toSignal(riskScore);
-      const row = {
-        period,
-        region,
-        hyOAS: x.hy,
-        fci: x.fci,
-        pmi: x.pmi,
-        dxy: x.dxy,
-        bookBill: x.bb,
-        defaults: x.def,
-        unemployment: x.ur,
-        riskScore,
-        signal,
-      };
-      const i = rows.findIndex((r) => r.period === period && r.region === region);
-      if (i >= 0) rows[i] = row;
-      else rows.push(row);
+      const row = { period, region, hyOAS: x.hy, fci: x.fci, pmi: x.pmi, dxy: x.dxy, bookBill: x.bb, defaults: x.def, unemployment: x.ur, riskScore, signal };
+      const i = rows.findIndex(r => r.period === period && r.region === region);
+      if (i >= 0) rows[i] = row; else rows.push(row);
     }
 
-    // --- IMF GDP-weighted Global calculation (typed keys) ---
-    const get = (rname: string) => rows.find((r) => r.period === period && r.region === rname)!;
-    const rUS = get('USA');
-    const rEU = get('Europe');
-    const rCN = get('China');
-    const rIN = get('India');
-    const rLA = get('Latin America');
+    // --- IMF GDP-weighted Global row (typed) ---
+    const get = (rname: string) => rows.find(r => r.period === period && r.region === rname)!;
+    const rUS = get('USA'), rEU = get('Europe'), rCN = get('China'), rIN = get('India'), rLA = get('Latin America');
 
     type NumericKey = 'hyOAS' | 'fci' | 'pmi' | 'dxy' | 'bookBill' | 'unemployment';
-
     const W = weights as Record<'USA' | 'Europe' | 'China' | 'India' | 'Latin America', number>;
 
     const wsum = (k: NumericKey) =>
@@ -189,42 +112,21 @@ export async function POST() {
 
     const g = {
       hyOAS: wsum('hyOAS'),
-      fci: wsum('fci'),
-      pmi: wsum('pmi'),
-      dxy: rUS.dxy,
-      bb: wsum('bookBill'),
-      ur: wsum('unemployment'),
+      fci:   wsum('fci'),
+      pmi:   wsum('pmi'),
+      dxy:   rUS.dxy, // keep USD index from US
+      bb:    wsum('bookBill'),
+      ur:    wsum('unemployment'),
     };
 
-    const gScore = computeScore({
-      hyOAS: g.hyOAS,
-      fci: g.fci,
-      pmi: g.pmi,
-      dxy: g.dxy,
-      bookBill: g.bb,
-      ur: g.ur,
-    });
+    const gScore = computeScore({ hyOAS: g.hyOAS, fci: g.fci, pmi: g.pmi, dxy: g.dxy, bookBill: g.bb, ur: g.ur });
+    const gRow = { period, region: 'Global', hyOAS: g.hyOAS, fci: g.fci, pmi: g.pmi, dxy: g.dxy, bookBill: g.bb, defaults: 2.0, unemployment: g.ur, riskScore: gScore, signal: toSignal(gScore) };
 
-    const gRow = {
-      period,
-      region: 'Global',
-      hyOAS: g.hyOAS,
-      fci: g.fci,
-      pmi: g.pmi,
-      dxy: g.dxy,
-      bookBill: g.bb,
-      defaults: 2.0,
-      unemployment: g.ur,
-      riskScore: gScore,
-      signal: toSignal(gScore),
-    };
-
-    const gi = rows.findIndex((r) => r.period === period && r.region === 'Global');
-    if (gi >= 0) rows[gi] = gRow;
-    else rows.push(gRow);
+    const gi = rows.findIndex(r => r.period === period && r.region === 'Global');
+    if (gi >= 0) rows[gi] = gRow; else rows.push(gRow);
 
     await writeRows(rows);
-    return NextResponse.json({ ok: true, updated: rows.filter((r) => r.period === period) });
+    return NextResponse.json({ ok: true, updated: rows.filter(r => r.period === period) });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
   }
