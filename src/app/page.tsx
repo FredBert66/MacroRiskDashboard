@@ -65,6 +65,12 @@ export default function Page() {
     URL.revokeObjectURL(url);
   }
 
+async function refreshNow() {
+  const res = await fetch('/api/refresh-now', { method: 'POST' });
+  const data = await res.json();
+  if (data.ok) alert('✅ Data refreshed!');
+  else alert(`⚠️ Refresh failed: ${data.error ?? res.status}`);
+}
   return (
     <main style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
       <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 12 }}>Global & Regional Macro-Risk Dashboard</h1>
