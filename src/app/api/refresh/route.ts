@@ -70,21 +70,55 @@ export async function POST() {
       if (i >= 0) rows[i] = row; else rows.push(row);
     }
 
-    // Global as IMF GDP-weighted average
-    const get = (rname: string) => rows.find(r => r.period===period && r.region===rname)!;
-    const rUS = get('USA'), rEU = get('Europe'), rCN = get('China'), rIN = get('India'), rLA = get('Latin America');
-    const W: Record<string, number> = weights as any;
-    const wsum = (k: keyof typeof rUS) => (
-      (rUS[k as any] as number) * W['USA'] +
-      (rEU[k as any] as number) * W['Europe'] +
-      (rCN[k as any] as number) * W['China'] +
-      (rIN[k as any] as number) * W['India'] +
-      (rLA[k as any] as number) * W['Latin America']
-    );
-    const g = { hyOAS: wsum('hyOAS'), fci: wsum('fci'), pmi: wsum('pmi'), dxy: rUS.dxy, bb: wsum('bookBill'), ur: wsum('unemployment') };
-    const gScore = computeScore({ hyOAS: g.hyOAS, fci: g.fci, pmi: g.pmi, dxy: g.dxy, bookBill: g.bb, ur: g.ur });
-    const gRow = { period, region: 'Global', hyOAS: g.hyOAS, fci: g.fci, pmi: g.pmi, dxy: g.dxy, bookBill: g.bb, defaults: 2.0, unemployment: g.ur, riskScore: gScore, signal: toSignal(gScore) };
-    const gi = rows.findIndex(r => r.period === period && r.region === 'Global');
+   // --- IMF GDP-weighted Global calculation (typed keys) ---
+type NumericKey =
+  | 'hyOAS'
+  | 'fci'
+  | 'pmi'
+  | 'dxy'
+  | 'bookBill'
+  | 'unemployment'; // (skip 'defaults' if you don't want it in the weighted calc)
+
+const W = weights as Record<string, number>;
+
+const wsum = (k: NumericKey) =>
+  rUS[k] * W['USA'] +
+  rEU[k] * W['Europe'] +
+  rCN[k] * W['China'] +
+  rIN[k] * W['India'] +
+  rLA[k] * W['Latin America'];
+
+const g = {
+  hyOAS: wsum('hyOAS'),
+  fci: wsum('fci'),
+  pmi: wsum('pmi'),
+  dxy: rUS.dxy, // keep USD index from US
+  bb: wsum('bookBill'),
+  ur: wsum('unemployment'),
+};
+
+const gScore = computeScore({
+  hyOAS: g.hyOAS,
+  fci: g.fci,
+  pmi: g.pmi,
+  dxy: g.dxy,
+  bookBill: g.bb,
+  ur: g.ur,
+});
+
+const gRow = {
+  period,
+  region: 'Global',
+  hyOAS: g.hyOAS,
+  fci: g.fci,
+  pmi: g.pmi,
+  dxy: g.dxy,
+  bookBill: g.bb,
+  defaults: 2.0,
+  unemployment: g.ur,
+  riskScore: gScore,
+  signal: toSignal(gScore),
+};
     if (gi >= 0) rows[gi] = gRow; else rows.push(gRow);
 
     await writeRows(rows);
