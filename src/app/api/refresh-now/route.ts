@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { headers } from 'next/headers';
 
 // import your existing POST handler (we’ll reuse it)
-import { POST as refreshPOST } from '../refresh/route';
+import { POST as refreshPOST } from '../../../refresh/route';
 
 // Proxy call so the token never leaves the server
 export async function POST() {
