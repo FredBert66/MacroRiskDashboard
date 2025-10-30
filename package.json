@@ -16,3 +16,10 @@
     "zod": "3.23.8"
   }
 }
+{
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "@types/react": "^18.3.5",
+    "@types/node": "^20.11.30"
+  }
+}
