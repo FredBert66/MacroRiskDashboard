@@ -49,7 +49,6 @@ function blsLatest(json: any, errName: string): number {
   if (!Array.isArray(data) || data.length === 0)
     throw new Error(`${errName}: empty`);
 
-  // BLS often returns newest first; just scan until we find a numeric value.
   for (const d of data) {
     const v = d?.value;
     const n =
@@ -61,6 +60,21 @@ function blsLatest(json: any, errName: string): number {
     if (Number.isFinite(n)) return n;
   }
   throw new Error(`${errName}: bad value`);
+}
+
+/** FRED fallback for US unemployment (UNRATE) */
+async function fredUNRATE(start = '2021-01-01'): Promise<number> {
+  const key = (process.env.FRED_KEY ?? '').trim();
+  if (!key) throw new Error('FRED_KEY missing for UNRATE fallback');
+  const url = new URL('https://api.stlouisfed.org/fred/series/observations');
+  url.searchParams.set('series_id', 'UNRATE');
+  url.searchParams.set('api_key', key);
+  url.searchParams.set('file_type', 'json');
+  url.searchParams.set('start_date', start);
+  const r = await fetch(url, { next: { revalidate: 3600 } });
+  if (!r.ok) throw new Error(`FRED UNRATE ${r.status}`);
+  const json = (await r.json()) as FredResponse;
+  return toNum(last(json.observations, 'UNRATE: no observations').value, 'UNRATE: bad value');
 }
 
 function json(status: number, body: any) {
@@ -153,7 +167,15 @@ async function handle(req: Request) {
       getUSD('2021-01-01'),
     ]);
 
-    const urUS = await bls(['LNS14000000'], 2021, 2026);
+    // Try BLS first; if empty/bad, fall back to FRED UNRATE
+    let urUSVal: number;
+    try {
+      const urUS = await bls(['LNS14000000'], 2021, 2026);
+      urUSVal = blsLatest(urUS, 'US unemployment');
+    } catch (e: any) {
+      warnings.push(`BLS US unemployment failed: ${String(e?.message || e)} — using FRED UNRATE fallback`);
+      urUSVal = await fredUNRATE('2021-01-01');
+    }
 
     // TE calls done separately so each can fail without killing the request
     const pmiUSp = safeTE(() => tePMI('United States'), (m) =>
@@ -191,13 +213,13 @@ async function handle(req: Request) {
       warnings.push(`UR MX via TE failed: ${m}`)
     );
 
-    // 4) Normalize latest values from FRED/BLS
+    // 4) Normalize latest values from FRED + US UR (with fallback)
     const latestFred = {
       usHy: fredLatest(usOas, 'US HY OAS'),
       euHy: fredLatest(euOas, 'EU HY OAS'),
       nfci: fredLatest(nfci, 'NFCI'),
       usd: fredLatest(usdIdx, 'USD index'),
-      urUS: blsLatest(urUS, 'US unemployment'),
+      urUS: urUSVal,
     };
 
     const period = quarter(new Date().toISOString());
@@ -250,7 +272,9 @@ async function handle(req: Request) {
 
     const latest = {
       ...latestFred,
-      pmiUS: pickNum(pmiUS, 'PMI US') ?? getPrev(rows, period, 'USA', 'pmi', fallbackPMI),
+      pmiUS:
+        pickNum(pmiUS, 'PMI US') ??
+        getPrev(rows, period, 'USA', 'pmi', fallbackPMI),
       pmiEA:
         pickNum(pmiEA, 'PMI Euro Area') ??
         getPrev(rows, period, 'Europe', 'pmi', fallbackPMI),
