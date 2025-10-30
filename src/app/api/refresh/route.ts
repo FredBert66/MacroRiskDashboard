@@ -8,6 +8,22 @@ import { computeScore, toSignal, quarter } from '../../../lib/normalize';
 import { readRows, writeRows } from '../../../lib/store';
 import weights from '../../../lib/weights.json';
 
+export async function GET(req: Request) {  // allow GET as well as POST
+  return handle(req);
+}
+export async function POST(req: Request) {
+  return handle(req);
+
+async function handle(req: Request) {
+  const required = process.env.REFRESH_TOKEN;
+  const hdr = headers().get('x-refresh-token');
+  const qsToken = new URL(req.url).searchParams.get('token');
+  if (required && hdr !== required && qsToken !== required) {
+    return NextResponse.json({ ok:false, error:'unauthorized' }, { status: 401 });
+  }
+
+  // ... keep the rest of your refresh logic exactly as is ...
+}
 export async function POST() {
   try {
     // Auth check
