@@ -1,21 +1,19 @@
 import { NextResponse } from 'next/server';
-import { headers } from 'next/headers';
 
-export async function POST() {
-  const h = headers();
-  const proto = h.get('x-forwarded-proto') ?? 'https';
-  const host = h.get('host') ?? '';
-  const token = process.env.REFRESH_TOKEN ?? '';
+export async function POST(req: Request) {
+  try {
+    const token = process.env.REFRESH_TOKEN ?? '';
+    const origin = new URL(req.url).origin; // robust: works locally & on Vercel
 
-  // call refresh without query param; send the token in a header
-  const url = `${proto}://${host}/api/refresh`;
-  const res = await fetch(url, { method: 'POST', headers: { 'x-refresh-token': token } });
-  const data = await res.json().catch(() => ({}));
-  return NextResponse.json(data, { status: res.status });
-}
-  const url = `${proto}://${host}/api/refresh?token=${encodeURIComponent(token)}`;
+    const res = await fetch(`${origin}/api/refresh`, {
+      method: 'POST',
+      headers: token ? { 'x-refresh-token': token } : undefined,
+      cache: 'no-store',
+    });
 
-  const res = await fetch(url, { method: 'POST' });
-  const data = await res.json().catch(() => ({}));
-  return NextResponse.json(data, { status: res.status });
+    const data = await res.json().catch(() => ({}));
+    return NextResponse.json(data, { status: res.status });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message ?? 'refresh-now failed' }, { status: 500 });
+  }
 }
