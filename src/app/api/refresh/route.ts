@@ -6,7 +6,7 @@ import { NextResponse } from 'next/server';
 // RELATIVE imports (avoid alias issues on Vercel)
 import { getUsHyOAS, getEuHyOAS, getNFCI, getUSD } from '../../../lib/fetchers/fred';
 import { bls } from '../../../lib/fetchers/bls';
-import { tePMI, teUR, te } from '../../../lib/fetchers/te';
+import { tePMI, teUR } from '../../../lib/fetchers/te';
 import { computeScore, toSignal, quarter } from '../../../lib/normalize';
 import { readRows, writeRows } from '../../../lib/store';
 import weights from '../../../lib/weights.json';
@@ -14,8 +14,6 @@ import weights from '../../../lib/weights.json';
 /** ---------------- helper types & utils ---------------- **/
 type FredObs = { value: string };
 type FredResponse = { observations: FredObs[] };
-type TeItem = { LatestValue?: string | number; Value?: string | number; value?: string | number; Actual?: string | number; Previous?: string | number };
-type TeArray = TeItem[];
 
 function toNum(v: unknown, err = 'Expected number'): number {
   const n = typeof v === 'number' ? v : (typeof v === 'string' ? Number(v.replace(/[% ,]/g, '')) : NaN);
@@ -35,49 +33,11 @@ function blsLatest(json: any, errName: string): number {
   return toNum(v, `${errName}: bad value`);
 }
 
-function teTryExtract(arr: unknown): number | null {
-  const a = arr as TeArray;
-  if (!Array.isArray(a) || a.length === 0) return null;
-
-  // scan newest → oldest
-  for (let i = a.length - 1; i >= 0; i--) {
-    const it = a[i] ?? {};
-    const candidates = [it.LatestValue, it.Value, it.value, it.Actual, it.Previous];
-    for (const c of candidates) {
-      const n =
-        typeof c === 'number'
-          ? c
-          : typeof c === 'string'
-          ? Number(c.replace(/[% ,]/g, ''))
-          : NaN;
-      if (Number.isFinite(n)) return n;
-    }
-  }
-  return null;
-}
-
-/** Try TE /indicators first; if no numeric values, fall back to /historical */
-async function teLatestOrHistorical(
-  country: string,
-  indicator: string,
-  primaryPayload: unknown,
-  errName: string
-): Promise<number> {
-  const fromPrimary = teTryExtract(primaryPayload);
-  if (fromPrimary !== null) return fromPrimary;
-
-  const hist = await te('/historical', { country, indicator });
-  const fromHist = teTryExtract(hist);
-  if (fromHist !== null) return fromHist;
-
-  throw new Error(`${errName}: no numeric value in indicators or historical`);
-}
-
 function json(status: number, body: any) {
   return NextResponse.json(body, { status });
 }
 
-/** ---------------- auth & handler ---------------- **/
+/** ---------------- auth ---------------- **/
 async function authorize(req: Request) {
   const required = (process.env.REFRESH_TOKEN ?? '').trim();
   if (!required) return { ok: true }; // open if not set
@@ -92,26 +52,44 @@ async function authorize(req: Request) {
       ok: false,
       resp: json(401,
         debug
-          ? {
-              ok: false,
-              error: 'unauthorized',
-              debug: {
-                hasRequired: Boolean(required),
-                hasHdr: Boolean(hdr),
-                hasQs: Boolean(qs),
-                equalHdr: hdr === required,
-                equalQs: qs === required,
-              },
-            }
-          : { ok: false, error: 'unauthorized' }
-      ),
+          ? { ok:false, error:'unauthorized', debug: {
+              hasRequired: Boolean(required),
+              hasHdr: Boolean(hdr),
+              hasQs: Boolean(qs),
+              equalHdr: hdr === required,
+              equalQs: qs === required
+            }}
+          : { ok:false, error:'unauthorized' }
+      )
     };
   }
   return { ok: true };
 }
 
+/** ---------------- resilient TE wrappers ---------------- **/
+async function safeTE<T>(fn: () => Promise<T>, onError: (msg: string) => void): Promise<T | null> {
+  try {
+    return await fn();
+  } catch (e: any) {
+    onError(String(e?.message || e));
+    return null;
+  }
+}
+
+function getPrev(rows: any[], period: string, region: string, key: keyof any, fallback: number): number {
+  // find previous period row for region (not the one we're writing)
+  const prev = rows
+    .filter(r => r.region === region && r.period !== period)
+    .sort((a,b) => (a.period > b.period ? 1 : -1))
+    .pop();
+  const v = prev?.[key];
+  if (typeof v === 'number' && Number.isFinite(v)) return v;
+  return fallback;
+}
+
+/** ---------------- handler ---------------- **/
 async function handle(req: Request) {
-  // 1) Auth first
+  // 1) Auth
   const auth = await authorize(req);
   if (!auth.ok) return auth.resp!;
 
@@ -119,15 +97,13 @@ async function handle(req: Request) {
   const errs: string[] = [];
   if (!process.env.FRED_KEY) errs.push('FRED_KEY missing');
   if (!process.env.BLS_KEY) errs.push('BLS_KEY missing');
-  if (!process.env.TE_USER || !process.env.TE_KEY) errs.push('TE_USER/TE_KEY missing (guest fallback available)');
-  if (errs.length) {
-    // Not fatal for TE (we have guest fallback in te.ts), but FRED/BLS are required
-    const fatal = errs.filter(e => !e.includes('TE_USER'));
-    if (fatal.length) return json(500, { ok: false, error: 'missing env vars', details: fatal });
-  }
+  // TE may fail; we’ll fall back gracefully
+  if (errs.length) return json(500, { ok:false, error:'missing env vars', details: errs });
+
+  const warnings: string[] = [];
 
   try {
-    // 3) Fetch in parallel (FRED + TE + BLS)
+    // 3) Fetch in parallel (FRED + BLS; TE handled safely below)
     const [usOas, euOas, nfci, usdIdx] = await Promise.all([
       getUsHyOAS('2021-01-01'),
       getEuHyOAS('2021-01-01'),
@@ -135,50 +111,74 @@ async function handle(req: Request) {
       getUSD('2021-01-01'),
     ]);
 
-    const [pmiUS, pmiEA, pmiCN, pmiIN, pmiBR, pmiMX] = await Promise.all([
-      tePMI('United States'),
-      tePMI('Euro Area'),
-      tePMI('China'),
-      tePMI('India'),
-      tePMI('Brazil'),
-      tePMI('Mexico'),
-    ]);
-
     const urUS = await bls(['LNS14000000'], 2021, 2026);
-    const [urEA, urCN, urIN, urBR, urMX] = await Promise.all([
-      teUR('Euro Area'),
-      teUR('China'),
-      teUR('India'),
-      teUR('Brazil'),
-      teUR('Mexico'),
-    ]);
 
-    // 4) Normalize latest values (with TE historical fallback)
-    const latest = {
+    // TE calls done separately so each can fail without killing the request
+    const pmiUSp = safeTE(() => tePMI('United States'), (m)=>warnings.push(`PMI US via TE failed: ${m}`));
+    const pmiEAp = safeTE(() => tePMI('Euro Area'),     (m)=>warnings.push(`PMI EA via TE failed: ${m}`));
+    const pmiCNp = safeTE(() => tePMI('China'),         (m)=>warnings.push(`PMI CN via TE failed: ${m}`));
+    const pmiINp = safeTE(() => tePMI('India'),         (m)=>warnings.push(`PMI IN via TE failed: ${m}`));
+    const pmiBRp = safeTE(() => tePMI('Brazil'),        (m)=>warnings.push(`PMI BR via TE failed: ${m}`));
+    const pmiMXp = safeTE(() => tePMI('Mexico'),        (m)=>warnings.push(`PMI MX via TE failed: ${m}`));
+
+    const urEAp  = safeTE(() => teUR('Euro Area'),      (m)=>warnings.push(`UR EA via TE failed: ${m}`));
+    const urCNp  = safeTE(() => teUR('China'),          (m)=>warnings.push(`UR CN via TE failed: ${m}`));
+    const urINp  = safeTE(() => teUR('India'),          (m)=>warnings.push(`UR IN via TE failed: ${m}`));
+    const urBRp  = safeTE(() => teUR('Brazil'),         (m)=>warnings.push(`UR BR via TE failed: ${m}`));
+    const urMXp  = safeTE(() => teUR('Mexico'),         (m)=>warnings.push(`UR MX via TE failed: ${m}`));
+
+    // 4) Normalize latest values from FRED/BLS
+    const latestFred = {
       usHy: fredLatest(usOas, 'US HY OAS'),
       euHy: fredLatest(euOas, 'EU HY OAS'),
       nfci: fredLatest(nfci, 'NFCI'),
       usd:  fredLatest(usdIdx, 'USD index'),
-
-      pmiUS: await teLatestOrHistorical('United States', 'PMI', pmiUS, 'PMI US'),
-      pmiEA: await teLatestOrHistorical('Euro Area', 'PMI', pmiEA, 'PMI Euro Area'),
-      pmiCN: await teLatestOrHistorical('China', 'PMI', pmiCN, 'PMI China'),
-      pmiIN: await teLatestOrHistorical('India', 'PMI', pmiIN, 'PMI India'),
-      pmiBR: await teLatestOrHistorical('Brazil', 'PMI', pmiBR, 'PMI Brazil'),
-      pmiMX: await teLatestOrHistorical('Mexico', 'PMI', pmiMX, 'PMI Mexico'),
-
       urUS: blsLatest(urUS, 'US unemployment'),
-      urEA: await teLatestOrHistorical('Euro Area', 'Unemployment Rate', urEA, 'UR Euro Area'),
-      urCN: await teLatestOrHistorical('China', 'Unemployment Rate', urCN, 'UR China'),
-      urIN: await teLatestOrHistorical('India', 'Unemployment Rate', urIN, 'UR India'),
-      urBR: await teLatestOrHistorical('Brazil', 'Unemployment Rate', urBR, 'UR Brazil'),
-      urMX: await teLatestOrHistorical('Mexico', 'Unemployment Rate', urMX, 'UR Mexico'),
     };
 
     const period = quarter(new Date().toISOString());
     const rows = await readRows();
 
-    // 5) Per-region upserts
+    // 5) Resolve TE results with graceful fallbacks to previous data or defaults
+    const [pmiUS, pmiEA, pmiCN, pmiIN, pmiBR, pmiMX] = await Promise.all([pmiUSp, pmiEAp, pmiCNp, pmiINp, pmiBRp, pmiMXp]);
+    const [urEA, urCN, urIN, urBR, urMX]             = await Promise.all([urEAp, urCNp, urINp, urBRp, urMXp]);
+
+    // Helper: extract a numeric (array of indicator objects) → first numeric field we see
+    const pickNum = (payload: any, errLabel: string): number | null => {
+      if (!Array.isArray(payload)) return null;
+      // newest → oldest
+      for (let i = payload.length - 1; i >= 0; i--) {
+        const it = payload[i] ?? {};
+        const candidates = [it.LatestValue, it.Value, it.value, it.Actual, it.Previous];
+        for (const c of candidates) {
+          const n = typeof c === 'number' ? c : (typeof c === 'string' ? Number(c.replace(/[% ,]/g,'')) : NaN);
+          if (Number.isFinite(n)) return n;
+        }
+      }
+      warnings.push(`${errLabel}: no numeric fields found in TE response`);
+      return null;
+    };
+
+    const fallbackPMI = 50; // neutral PMI if nothing else available
+    const fallbackUR  = 6;  // generic UR fallback %
+
+    const latest = {
+      ...latestFred,
+      pmiUS: pickNum(pmiUS, 'PMI US') ?? getPrev(rows, period, 'USA', 'pmi', fallbackPMI),
+      pmiEA: pickNum(pmiEA, 'PMI Euro Area') ?? getPrev(rows, period, 'Europe', 'pmi', fallbackPMI),
+      pmiCN: pickNum(pmiCN, 'PMI China') ?? getPrev(rows, period, 'China', 'pmi', fallbackPMI),
+      pmiIN: pickNum(pmiIN, 'PMI India') ?? getPrev(rows, period, 'India', 'pmi', fallbackPMI),
+      pmiBR: pickNum(pmiBR, 'PMI Brazil') ?? fallbackPMI,
+      pmiMX: pickNum(pmiMX, 'PMI Mexico') ?? fallbackPMI,
+
+      urEA: pickNum(urEA, 'UR Euro Area') ?? getPrev(rows, period, 'Europe', 'unemployment', fallbackUR),
+      urCN: pickNum(urCN, 'UR China') ?? getPrev(rows, period, 'China', 'unemployment', fallbackUR),
+      urIN: pickNum(urIN, 'UR India') ?? getPrev(rows, period, 'India', 'unemployment', fallbackUR),
+      urBR: pickNum(urBR, 'UR Brazil') ?? fallbackUR,
+      urMX: pickNum(urMX, 'UR Mexico') ?? fallbackUR,
+    };
+
+    // 6) Build/Upsert per-region rows
     const regions: Record<string, { hy: number; fci: number; pmi: number; dxy: number; ur: number; bb: number; def: number }> = {
       USA:    { hy: latest.usHy, fci: latest.nfci, pmi: latest.pmiUS, dxy: latest.usd, ur: latest.urUS, bb: 1.06, def: 2.0 },
       Europe: { hy: latest.euHy, fci: latest.nfci, pmi: latest.pmiEA, dxy: latest.usd, ur: latest.urEA, bb: 1.04, def: 2.0 },
@@ -190,16 +190,19 @@ async function handle(req: Request) {
       },
     };
 
+    const periodStr = period;
+    const rowsOut = [...rows];
+
     for (const [region, x] of Object.entries(regions)) {
       const riskScore = computeScore({ hyOAS: x.hy, fci: x.fci, pmi: x.pmi, dxy: x.dxy, bookBill: x.bb, ur: x.ur });
-      const row = { period, region, hyOAS: x.hy, fci: x.fci, pmi: x.pmi, dxy: x.dxy, bookBill: x.bb, defaults: x.def, unemployment: x.ur, riskScore, signal: toSignal(riskScore) };
-      const i = rows.findIndex(r => r.period === period && r.region === region);
-      if (i >= 0) rows[i] = row; else rows.push(row);
+      const row = { period: periodStr, region, hyOAS: x.hy, fci: x.fci, pmi: x.pmi, dxy: x.dxy, bookBill: x.bb, defaults: x.def, unemployment: x.ur, riskScore, signal: toSignal(riskScore) };
+      const i = rowsOut.findIndex(r => r.period === periodStr && r.region === region);
+      if (i >= 0) rowsOut[i] = row; else rowsOut.push(row);
     }
 
-    // 6) Global (IMF-weighted)
-    const get = (rname: string) => rows.find(r => r.period === period && r.region === rname)!;
-    const rUS = get('USA'), rEU = get('Europe'), rCN = get('China'), rIN = get('India'), rLA = get('Latin America');
+    // 7) Global (IMF-weighted)
+    const getRow = (rname: string) => rowsOut.find(r => r.period === periodStr && r.region === rname)!;
+    const rUS = getRow('USA'), rEU = getRow('Europe'), rCN = getRow('China'), rIN = getRow('India'), rLA = getRow('Latin America');
 
     type Key = 'hyOAS' | 'fci' | 'pmi' | 'dxy' | 'bookBill' | 'unemployment';
     const W = weights as Record<'USA' | 'Europe' | 'China' | 'India' | 'Latin America', number>;
@@ -207,17 +210,18 @@ async function handle(req: Request) {
 
     const g = { hyOAS: wsum('hyOAS'), fci: wsum('fci'), pmi: wsum('pmi'), dxy: rUS.dxy, bb: wsum('bookBill'), ur: wsum('unemployment') };
     const gScore = computeScore({ hyOAS: g.hyOAS, fci: g.fci, pmi: g.pmi, dxy: g.dxy, bookBill: g.bb, ur: g.ur });
-    const gRow = { period, region: 'Global', hyOAS: g.hyOAS, fci: g.fci, pmi: g.pmi, dxy: g.dxy, bookBill: g.bb, defaults: 2.0, unemployment: g.ur, riskScore: gScore, signal: toSignal(gScore) };
+    const gRow = { period: periodStr, region: 'Global', hyOAS: g.hyOAS, fci: g.fci, pmi: g.pmi, dxy: g.dxy, bookBill: g.bb, defaults: 2.0, unemployment: g.ur, riskScore: gScore, signal: toSignal(gScore) };
 
-    const gi = rows.findIndex(r => r.period === period && r.region === 'Global');
-    if (gi >= 0) rows[gi] = gRow; else rows.push(gRow);
+    const gi = rowsOut.findIndex(r => r.period === periodStr && r.region === 'Global');
+    if (gi >= 0) rowsOut[gi] = gRow; else rowsOut.push(gRow);
 
-    // 7) Persist
-    await writeRows(rows);
+    // 8) Persist
+    await writeRows(rowsOut);
 
-    return json(200, { ok: true, updated: rows.filter(r => r.period === period) });
+    return json(200, { ok:true, updated: rowsOut.filter(r => r.period === periodStr), warnings });
+
   } catch (e: any) {
-    return json(502, { ok: false, error: 'upstream fetch failed', details: String(e?.message || e) });
+    return json(502, { ok:false, error:'upstream fetch failed', details: String(e?.message || e) });
   }
 }
 
