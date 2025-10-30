@@ -65,45 +65,48 @@ export default function Page() {
     URL.revokeObjectURL(url);
   }
 
-async function refreshNow() {
-  const res = await fetch('/api/refresh-now', { method: 'POST' });
-  const data = await res.json();
-  if (data.ok) alert('✅ Data refreshed!');
-  else alert(`⚠️ Refresh failed: ${data.error ?? res.status}`);
-}
+  async function refreshNow() {
+    // If you added /api/refresh-now proxy, call that:
+    const res = await fetch('/api/refresh-now', { method: 'POST' });
+    // Or if you allowed GET token: const res = await fetch('/api/refresh?token=<YOUR_TOKEN>');
+    const data = await res.json().catch(() => ({}));
+    if (data?.ok) {
+      // re-pull current region after refresh
+      const snap = await fetch(`/api/snapshot?region=${region}`).then(r => r.json());
+      setRows(snap.rows || []);
+      alert('✅ Data refreshed!');
+    } else {
+      alert(`⚠️ Refresh failed: ${data?.error ?? res.status}`);
+    }
+  }
+
   return (
     <main style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
       <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 12 }}>Global & Regional Macro-Risk Dashboard</h1>
+
       <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:12 }}>
         <label style={{ fontSize: 14 }}>Region</label>
-        <select 
-          value={region} 
-          onChange={(e)=>setRegion(e.target.value as Region)} 
+        <select
+          value={region}
+          onChange={(e)=>setRegion(e.target.value as Region)}
           style={{ padding:'6px 8px' }}
         >
-          {REGIONS.map((r) =>( 
-            <option key={r} value={r}>
-              {r}
-            </option>
-          ))}
+          {REGIONS.map(r => <option key={r} value={r}>{r}</option>)}
         </select>
-        
-        <button 
-          onClick={exportCSV} 
-          style={{ 
-            marginLeft:'auto', 
-            padding:'6px 10px', 
-            border:'1px solid #ccc', 
-            borderRadius: 8, 
-            fontSize: 12,
-            background: '#f6f6f6',
-          }}
+
+        {/* spacer pushes buttons to the right without hiding siblings */}
+        <div style={{ marginLeft:'auto' }} />
+
+        <button
+          onClick={exportCSV}
+          style={{ padding:'6px 10px', border:'1px solid #ccc', borderRadius:8, fontSize: 12, background:'#f6f6f6' }}
         >
           Export CSV
         </button>
-        <button 
-          onClick={refreshNow} 
-          className="border rounded px-3 py-1 text-sm"
+
+        <button
+          onClick={refreshNow}
+          style={{ padding:'6px 10px', border:'1px solid #ccc', borderRadius:8, fontSize: 12, background:'#f6f6f6' }}
         >
           Refresh now
         </button>
