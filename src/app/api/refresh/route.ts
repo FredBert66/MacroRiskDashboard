@@ -21,7 +21,11 @@ async function handle(req: Request) {
   if (required && hdr !== required && qsToken !== required) {
     return NextResponse.json({ ok:false, error:'unauthorized' }, { status: 401 });
   }
-
+async function refreshNow() {
+  const r = await fetch('/api/refresh-now', { method: 'POST' });
+  const j = await r.json();
+  alert(j.ok ? 'Refreshed!' : `Failed: ${j.error ?? r.status}`);
+}
   // ... keep the rest of your refresh logic exactly as is ...
 }
 export async function POST() {
