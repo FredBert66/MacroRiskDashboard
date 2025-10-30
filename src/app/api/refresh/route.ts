@@ -6,6 +6,7 @@ import { NextResponse } from 'next/server';
 // RELATIVE imports (avoid alias issues on Vercel)
 import { getUsHyOAS, getEuHyOAS, getNFCI, getUSD } from '../../../lib/fetchers/fred';
 import { bls } from '../../../lib/fetchers/bls';
+import { te } from '../../../lib/fetchers/te';
 import { tePMI, teUR } from '../../../lib/fetchers/te';
 import { computeScore, toSignal, quarter } from '../../../lib/normalize';
 import { readRows, writeRows } from '../../../lib/store';
@@ -31,37 +32,49 @@ function fredLatest(series: unknown, errName: string): number {
   const s = series as FredResponse;
   return toNum(last(s.observations, `${errName}: no observations`).value, `${errName}: bad value`);
 }
-function teLatest(arr: unknown, errName: string): number {
+function teTryExtract(arr: unknown): number | null {
   const a = arr as any[];
-  if (!Array.isArray(a) || a.length === 0) {
-    throw new Error(`${errName}: empty`);
-  }
+  if (!Array.isArray(a) || a.length === 0) return null;
 
-  // scan from the most recent entry backwards
+  // scan from newest → oldest
   for (let i = a.length - 1; i >= 0; i--) {
     const it = a[i] ?? {};
-    // Try the common TE fields in order of “freshness”
     const candidates = [
       it.LatestValue,
       it.Value,
-      it.value,     // some TE payloads use lowercase
-      it.Actual,    // indicators data often includes Actual/Previous
+      it.value,
+      it.Actual,
       it.Previous,
     ];
-
     for (const c of candidates) {
       const n =
         typeof c === 'number'
           ? c
           : typeof c === 'string'
-          ? Number(c.replace(/[, ]/g, ''))
+          ? Number(c.replace(/[% ,]/g, ''))
           : NaN;
-
       if (Number.isFinite(n)) return n;
     }
   }
+  return null;
+}
 
-  throw new Error(`${errName}: bad value (no numeric LatestValue/Value/Actual/Previous)`);
+// Try TE /indicators first; if no numeric values, fall back to /historical
+async function teLatestOrHistorical(
+  country: string,
+  indicator: string,
+  primary: unknown,
+  errName: string
+): Promise<number> {
+  const fromPrimary = teTryExtract(primary);
+  if (fromPrimary !== null) return fromPrimary;
+
+  // Fallback: historical series (usually has numeric Value)
+  const hist = await te('/historical', { country, indicator });
+  const fromHist = teTryExtract(hist);
+  if (fromHist !== null) return fromHist;
+
+  throw new Error(`${errName}: no numeric value in indicators or historical`);
 }
 function blsLatest(json: any, errName: string): number {
   const v = json?.Results?.series?.[0]?.data?.[0]?.value ?? json?.Results?.[0]?.series?.[0]?.data?.[0]?.value;
