@@ -32,10 +32,36 @@ function fredLatest(series: unknown, errName: string): number {
   return toNum(last(s.observations, `${errName}: no observations`).value, `${errName}: bad value`);
 }
 function teLatest(arr: unknown, errName: string): number {
-  const a = arr as TeArray;
-  const item = last(a, `${errName}: empty`);
-  const v = item.LatestValue ?? item.Value ?? (a[0]?.Value);
-  return toNum(v, `${errName}: bad value`);
+  const a = arr as any[];
+  if (!Array.isArray(a) || a.length === 0) {
+    throw new Error(`${errName}: empty`);
+  }
+
+  // scan from the most recent entry backwards
+  for (let i = a.length - 1; i >= 0; i--) {
+    const it = a[i] ?? {};
+    // Try the common TE fields in order of “freshness”
+    const candidates = [
+      it.LatestValue,
+      it.Value,
+      it.value,     // some TE payloads use lowercase
+      it.Actual,    // indicators data often includes Actual/Previous
+      it.Previous,
+    ];
+
+    for (const c of candidates) {
+      const n =
+        typeof c === 'number'
+          ? c
+          : typeof c === 'string'
+          ? Number(c.replace(/[, ]/g, ''))
+          : NaN;
+
+      if (Number.isFinite(n)) return n;
+    }
+  }
+
+  throw new Error(`${errName}: bad value (no numeric LatestValue/Value/Actual/Previous)`);
 }
 function blsLatest(json: any, errName: string): number {
   const v = json?.Results?.series?.[0]?.data?.[0]?.value ?? json?.Results?.[0]?.series?.[0]?.data?.[0]?.value;
