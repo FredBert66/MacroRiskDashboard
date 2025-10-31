@@ -85,14 +85,12 @@ function json(status: number, body: any) {
 async function authorize(req: Request) {
   const required = (process.env.REFRESH_TOKEN ?? '').trim();
 
-  // Allow internal proxy if enabled
-  const allowInternal = (process.env.ALLOW_INTERNAL_REFRESH ?? '').trim() === '1';
-  const isInternal    = req.headers.get('x-internal-refresh') === '1';
+  // Allow trusted internal proxy without token
+  const isInternal = req.headers.get('x-internal-refresh') === '1';
+  if (isInternal) return { ok: true };
 
-  if (!required || (allowInternal && isInternal)) {
-    return { ok: true };
-  }
-
+  // Otherwise require a matching token via header or query
+  if (!required) return { ok: true };
   const hdr = req.headers.get('x-refresh-token')?.trim() ?? null;
   const qs  = new URL(req.url).searchParams.get('token')?.trim() ?? null;
   const ok  = hdr === required || qs === required;
@@ -113,7 +111,6 @@ async function authorize(req: Request) {
                 equalHdr: hdr === required,
                 equalQs: qs === required,
                 isInternal,
-                allowInternal,
               },
             }
           : { ok: false, error: 'unauthorized' },
