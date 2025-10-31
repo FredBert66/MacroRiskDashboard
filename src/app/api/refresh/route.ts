@@ -83,13 +83,13 @@ function json(status: number, body: any) {
 
 /** ---------------- auth ---------------- **/
 async function authorize(req: Request) {
-  const required = (process.env.REFRESH_TOKEN ?? '').trim();
-
-  // Allow trusted internal proxy without token
+  const required   = (process.env.REFRESH_TOKEN ?? '').trim();
   const isInternal = req.headers.get('x-internal-refresh') === '1';
+
+  // Allow our own server-side proxy without a token
   if (isInternal) return { ok: true };
 
-  // Otherwise require a matching token via header or query
+  // Otherwise require a matching token (header or ?token=)
   if (!required) return { ok: true };
   const hdr = req.headers.get('x-refresh-token')?.trim() ?? null;
   const qs  = new URL(req.url).searchParams.get('token')?.trim() ?? null;
@@ -102,23 +102,23 @@ async function authorize(req: Request) {
       resp: NextResponse.json(
         debug
           ? {
-              ok: false,
-              error: 'unauthorized',
+              ok:false,
+              error:'unauthorized',
               debug: {
-                hasRequired: Boolean(required),
-                hasHdr: Boolean(hdr),
-                hasQs: Boolean(qs),
+                hasRequired:Boolean(required),
+                hasHdr:Boolean(hdr),
+                hasQs:Boolean(qs),
                 equalHdr: hdr === required,
                 equalQs: qs === required,
-                isInternal,
-              },
+                isInternal
+              }
             }
-          : { ok: false, error: 'unauthorized' },
+          : { ok:false, error:'unauthorized' },
         { status: 401 }
-      ),
+      )
     };
   }
-  return { ok: true };
+  return { ok:true };
 }
 
 /** ---------------- resilient TE wrappers ---------------- **/
