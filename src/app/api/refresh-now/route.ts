@@ -6,14 +6,16 @@ import { NextResponse } from 'next/server';
 export async function POST(req: Request) {
   try {
     const origin = new URL(req.url).origin;
-
-    // Read token from env (must be set in Vercel → Project → Settings → Environment Variables)
     const token = (process.env.REFRESH_TOKEN ?? '').trim();
 
-    // Call your refresh endpoint and pass the token in a header
-    const res = await fetch(`${origin}/api/refresh`, {
+    const url = `${origin}/api/refresh${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+
+    const res = await fetch(url, {
       method: 'POST',
-      headers: token ? { 'x-refresh-token': token } : undefined,
+      headers: {
+        ...(token ? { 'x-refresh-token': token } : {}),
+        'x-internal-refresh': '1', // possible internal-allow (step 2)
+      },
       cache: 'no-store',
     });
 
