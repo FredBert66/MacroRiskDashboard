@@ -84,18 +84,24 @@ function json(status: number, body: any) {
 /** ---------------- auth ---------------- **/
 async function authorize(req: Request) {
   const required = (process.env.REFRESH_TOKEN ?? '').trim();
-  if (!required) return { ok: true }; // open if not set
+
+  // Allow internal proxy if enabled
+  const allowInternal = (process.env.ALLOW_INTERNAL_REFRESH ?? '').trim() === '1';
+  const isInternal    = req.headers.get('x-internal-refresh') === '1';
+
+  if (!required || (allowInternal && isInternal)) {
+    return { ok: true };
+  }
 
   const hdr = req.headers.get('x-refresh-token')?.trim() ?? null;
-  const qs = new URL(req.url).searchParams.get('token')?.trim() ?? null;
-  const ok = hdr === required || qs === required;
+  const qs  = new URL(req.url).searchParams.get('token')?.trim() ?? null;
+  const ok  = hdr === required || qs === required;
 
   if (!ok) {
     const debug = new URL(req.url).searchParams.get('debug') === '1';
     return {
       ok: false,
-      resp: json(
-        401,
+      resp: NextResponse.json(
         debug
           ? {
               ok: false,
@@ -106,9 +112,12 @@ async function authorize(req: Request) {
                 hasQs: Boolean(qs),
                 equalHdr: hdr === required,
                 equalQs: qs === required,
+                isInternal,
+                allowInternal,
               },
             }
-          : { ok: false, error: 'unauthorized' }
+          : { ok: false, error: 'unauthorized' },
+        { status: 401 }
       ),
     };
   }
