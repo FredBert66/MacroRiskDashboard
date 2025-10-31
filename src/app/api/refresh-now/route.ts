@@ -8,20 +8,19 @@ export async function POST(req: Request) {
     const origin = new URL(req.url).origin;
     const token = (process.env.REFRESH_TOKEN ?? '').trim();
 
-    // Call refresh with header + query + debug flag
     const url = `${origin}/api/refresh?debug=1${token ? `&token=${encodeURIComponent(token)}` : ''}`;
 
     const res = await fetch(url, {
       method: 'POST',
       headers: {
         ...(token ? { 'x-refresh-token': token } : {}),
-        'x-internal-refresh': '1',   // used by auth to allow trusted internal proxy
+        'x-internal-refresh': '1', // mark as trusted internal call
       },
       cache: 'no-store',
     });
 
-    const data = await res.json().catch(() => ({}));
-    // Bubble up the *actual* status + body so the UI shows the real reason
+    // bubble up exact body & status so you can see why it fails
+    const data = await res.json().catch(() => ({ ok: false, error: 'no json' }));
     return NextResponse.json(data, { status: res.status });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message ?? 'refresh-now failed' }, { status: 500 });
