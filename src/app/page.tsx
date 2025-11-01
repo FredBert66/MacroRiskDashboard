@@ -152,6 +152,29 @@ export default function Page() {
             </tbody>
           </table>
           <p style={{ fontSize:12, color:'#666', marginTop:8 }}>🟢 Loose | 🟡 Neutral | 🔴 Tight. Risk Score 0 = safest, 1 = crisis-level.</p>
+          {/* Reference Table */}
+          <h2 style={{ fontSize:18, marginTop:16, marginBottom:8 }}>Reference Ranges</h2>
+          <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13, marginBottom:16 }}>
+            <thead>
+              <tr style={{ textAlign:'left', background:'#fafafa' }}>
+                <th style={{ padding:8 }}>Indicator</th>
+                <th style={{ padding:8 }}>Normal / Loose</th>
+                <th style={{ padding:8 }}>Caution</th>
+                <th style={{ padding:8 }}>Stress / Tight</th>
+                <th style={{ padding:8 }}>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td style={{padding:8}}>HY OAS (bps)</td><td>&lt; 350</td><td>350–500</td><td>&gt; 500</td><td>Credit spreads</td></tr>
+              <tr><td style={{padding:8}}>FCI / NFCI</td><td>&lt; 0.0</td><td>0.0–0.5</td><td>&gt; 0.5</td><td>Financial conditions</td></tr>
+              <tr><td style={{padding:8}}>PMI</td><td>&gt; 52</td><td>48–52</td><td>&lt; 48</td><td>Economic momentum</td></tr>
+              <tr><td style={{padding:8}}>DXY / FX</td><td>95–105</td><td>105–110</td><td>&gt; 110</td><td>USD strength</td></tr>
+              <tr><td style={{padding:8}}>Book-to-Bill</td><td>&gt; 1.05</td><td>0.95–1.05</td><td>&lt; 0.95</td><td>Tech demand</td></tr>
+              <tr><td style={{padding:8}}>Defaults %</td><td>&lt; 2</td><td>2–4</td><td>&gt; 4</td><td>Corporate defaults</td></tr>
+              <tr><td style={{padding:8}}>Unemployment %</td><td>&lt; 5</td><td>5–7</td><td>&gt; 7</td><td>Labor market</td></tr>
+              <tr><td style={{padding:8}}>Risk Score (0–1)</td><td>&lt; 0.3</td><td>0.3–0.6</td><td>&gt; 0.6</td><td>Composite risk</td></tr>
+            </tbody>
+          </table>
         </div>
       )}
     </main>
