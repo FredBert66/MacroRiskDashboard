@@ -85,7 +85,7 @@ function json(status: number, body: any) {
 async function authorize(req: Request) {
   const required   = (process.env.REFRESH_TOKEN ?? '').trim();
   const isInternal = req.headers.get('x-internal-refresh') === '1';
-  if (isInternal) return { ok: true };            // <- allow proxy
+  if (isInternal) return { ok: true };  // allow our in-process proxy
   if (!required) return { ok: true };
 
   const hdr = req.headers.get('x-refresh-token')?.trim() ?? null;
@@ -97,15 +97,17 @@ async function authorize(req: Request) {
     return {
       ok: false,
       resp: NextResponse.json(
-        debug ? {
-          ok:false, error:'unauthorized',
-          debug: {
-            hasRequired:Boolean(required),
-            hasHdr:Boolean(hdr), hasQs:Boolean(qs),
-            equalHdr: hdr === required, equalQs: qs === required,
-            isInternal
-          }
-        } : { ok:false, error:'unauthorized' },
+        debug
+          ? {
+              ok:false, error:'unauthorized',
+              debug: {
+                hasRequired:Boolean(required),
+                hasHdr:Boolean(hdr), hasQs:Boolean(qs),
+                equalHdr: hdr === required, equalQs: qs === required,
+                isInternal
+              }
+            }
+          : { ok:false, error:'unauthorized' },
         { status: 401 }
       )
     };
