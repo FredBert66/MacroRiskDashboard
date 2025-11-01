@@ -85,12 +85,9 @@ function json(status: number, body: any) {
 async function authorize(req: Request) {
   const required   = (process.env.REFRESH_TOKEN ?? '').trim();
   const isInternal = req.headers.get('x-internal-refresh') === '1';
-
-  // Allow our own server-side proxy without a token
-  if (isInternal) return { ok: true };
-
-  // Otherwise require a matching token (header or ?token=)
+  if (isInternal) return { ok: true };            // <- allow proxy
   if (!required) return { ok: true };
+
   const hdr = req.headers.get('x-refresh-token')?.trim() ?? null;
   const qs  = new URL(req.url).searchParams.get('token')?.trim() ?? null;
   const ok  = hdr === required || qs === required;
@@ -100,27 +97,21 @@ async function authorize(req: Request) {
     return {
       ok: false,
       resp: NextResponse.json(
-        debug
-          ? {
-              ok:false,
-              error:'unauthorized',
-              debug: {
-                hasRequired:Boolean(required),
-                hasHdr:Boolean(hdr),
-                hasQs:Boolean(qs),
-                equalHdr: hdr === required,
-                equalQs: qs === required,
-                isInternal
-              }
-            }
-          : { ok:false, error:'unauthorized' },
+        debug ? {
+          ok:false, error:'unauthorized',
+          debug: {
+            hasRequired:Boolean(required),
+            hasHdr:Boolean(hdr), hasQs:Boolean(qs),
+            equalHdr: hdr === required, equalQs: qs === required,
+            isInternal
+          }
+        } : { ok:false, error:'unauthorized' },
         { status: 401 }
       )
     };
   }
-  return { ok:true };
+  return { ok: true };
 }
-
 /** ---------------- resilient TE wrappers ---------------- **/
 async function safeTE<T>(
   fn: () => Promise<T>,
