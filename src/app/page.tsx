@@ -81,69 +81,46 @@ export default function Page() {
   }
 
   return (
-    <main style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
-      <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 12 }}>Global & Regional Macro-Risk Dashboard</h1>
+  <main style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
+    <h1 style={{ fontSize: 24, fontWeight: 600, marginBottom: 12 }}>
+      Global & Regional Macro-Risk Dashboard
+    </h1>
 
-      <div style={{ display:'flex', alignItems:'center', gap:12, marginBottom:12 }}>
-        <label style={{ fontSize: 14 }}>Region</label>
-        <select
-          value={region}
-          onChange={(e)=>setRegion(e.target.value as Region)}
-          style={{ padding:'6px 8px' }}
-        >
-          {REGIONS.map(r => <option key={r} value={r}>{r}</option>)}
-        </select>
+    {/* Controls (Export + Refresh) — keep whatever you already had here */}
 
-        {/* spacer pushes buttons to the right without hiding siblings */}
-        <div style={{ marginLeft:'auto' }} />
+    <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
+      <span style={{ fontSize:13, color:'#666' }}>Composite Risk (last 8 quarters)</span>
+      <Sparkline values={riskSeries} />
+    </div>
 
-        <button
-          onClick={exportCSV}
-          style={{ padding:'6px 10px', border:'1px solid #ccc', borderRadius:8, fontSize: 12, background:'#f6f6f6' }}
-        >
-          Export CSV
-        </button>
+    {loading ? (
+      <div>Loading…</div>
+    ) : (
+      <>
+        {/* Reference Table ABOVE the data grid */}
+        <h2 style={{ fontSize:18, marginTop:8, marginBottom:8 }}>Reference Ranges</h2>
+        <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13, marginBottom:16 }}>
+          <thead>
+            <tr style={{ textAlign:'left', background:'#fafafa' }}>
+              <th style={{ padding:8 }}>Indicator</th>
+              <th style={{ padding:8 }}>Normal / Loose</th>
+              <th style={{ padding:8 }}>Caution</th>
+              <th style={{ padding:8 }}>Stress / Tight</th>
+              <th style={{ padding:8 }}>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td style={{padding:8}}>HY OAS (bps)</td><td>&lt; 350</td><td>350–500</td><td>&gt; 500</td><td>Credit spreads</td></tr>
+            <tr><td style={{padding:8}}>FCI / NFCI</td><td>&lt; 0.0</td><td>0.0–0.5</td><td>&gt; 0.5</td><td>Financial conditions</td></tr>
+            <tr><td style={{padding:8}}>PMI</td><td>&gt; 52</td><td>48–52</td><td>&lt; 48</td><td>Economic momentum</td></tr>
+            <tr><td style={{padding:8}}>DXY / FX</td><td>95–105</td><td>105–110</td><td>&gt; 110</td><td>USD strength</td></tr>
+            <tr><td style={{padding:8}}>Book-to-Bill</td><td>&gt; 1.05</td><td>0.95–1.05</td><td>&lt; 0.95</td><td>Tech demand</td></tr>
+            <tr><td style={{padding:8}}>Defaults %</td><td>&lt; 2</td><td>2–4</td><td>&gt; 4</td><td>Corporate defaults</td></tr>
+            <tr><td style={{padding:8}}>Unemployment %</td><td>&lt; 5</td><td>5–7</td><td>&gt; 7</td><td>Labor market</td></tr>
+            <tr><td style={{padding:8}}>Risk Score (0–1)</td><td>&lt; 0.3</td><td>0.3–0.6</td><td>&gt; 0.6</td><td>Composite risk</td></tr>
+          </tbody>
+        </table>
 
-        <button
-          onClick={refreshNow}
-          style={{ padding:'6px 10px', border:'1px solid #ccc', borderRadius:8, fontSize: 12, background:'#f6f6f6' }}
-        >
-          Refresh now
-        </button>
-      </div>
-
-      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
-        <span style={{ fontSize:13, color:'#666' }}>Composite Risk (last 8 quarters)</span>
-        <Sparkline values={riskSeries} />
-      </div>
-
-      {loading ? (
-        <div>Loading…</div> 
-      ) : (
-       {/* Reference Table */}
-          <h2 style={{ fontSize:18, marginTop:16, marginBottom:8 }}>Reference Ranges</h2>
-          <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13, marginBottom:16 }}>
-            <thead>
-              <tr style={{ textAlign:'left', background:'#fafafa' }}>
-                <th style={{ padding:8 }}>Indicator</th>
-                <th style={{ padding:8 }}>Normal / Loose</th>
-                <th style={{ padding:8 }}>Caution</th>
-                <th style={{ padding:8 }}>Stress / Tight</th>
-                <th style={{ padding:8 }}>Notes</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr><td style={{padding:8}}>HY OAS (bps)</td><td>&lt; 350</td><td>350–500</td><td>&gt; 500</td><td>Credit spreads</td></tr>
-              <tr><td style={{padding:8}}>FCI / NFCI</td><td>&lt; 0.0</td><td>0.0–0.5</td><td>&gt; 0.5</td><td>Financial conditions</td></tr>
-              <tr><td style={{padding:8}}>PMI</td><td>&gt; 52</td><td>48–52</td><td>&lt; 48</td><td>Economic momentum</td></tr>
-              <tr><td style={{padding:8}}>DXY / FX</td><td>95–105</td><td>105–110</td><td>&gt; 110</td><td>USD strength</td></tr>
-              <tr><td style={{padding:8}}>Book-to-Bill</td><td>&gt; 1.05</td><td>0.95–1.05</td><td>&lt; 0.95</td><td>Tech demand</td></tr>
-              <tr><td style={{padding:8}}>Defaults %</td><td>&lt; 2</td><td>2–4</td><td>&gt; 4</td><td>Corporate defaults</td></tr>
-              <tr><td style={{padding:8}}>Unemployment %</td><td>&lt; 5</td><td>5–7</td><td>&gt; 7</td><td>Labor market</td></tr>
-              <tr><td style={{padding:8}}>Risk Score (0–1)</td><td>&lt; 0.3</td><td>0.3–0.6</td><td>&gt; 0.6</td><td>Composite risk</td></tr>
-            </tbody>
-          </table>
-  
         {/* Main data grid */}
         <div style={{ overflowX:'auto' }}>
           <table style={{ width:'100%', borderCollapse:'collapse', fontSize: 13 }}>
@@ -178,10 +155,12 @@ export default function Page() {
               ))}
             </tbody>
           </table>
-          <p style={{ fontSize:12, color:'#666', marginTop:8 }}>🟢 Loose | 🟡 Neutral | 🔴 Tight. Risk Score 0 = safest, 1 = crisis-level.
+
+          <p style={{ fontSize:12, color:'#666', marginTop:8 }}>
+            🟢 Loose | 🟡 Neutral | 🔴 Tight. Risk Score 0 = safest, 1 = crisis-level.
           </p>
         </div>
-      )}
-    </main>
-  );
-}
+      </>
+    )}
+  </main>
+);
